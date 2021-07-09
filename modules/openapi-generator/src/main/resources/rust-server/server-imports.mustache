@@ -21,6 +21,9 @@ use mime_multipart::{read_multipart_body, Node, Part};
 use multipart::server::Multipart;
 use multipart::server::save::SaveResult;
 {{/apiUsesMultipartFormData}}
+use hyper::server::conn::AddrStream;
+use std::net::SocketAddr;
+
 
 #[allow(unused_imports)]
 use crate::models;

@@ -1,3 +1,69 @@
+pub trait ApiFactory<C, T>
+where
+    T: Api<C> + Clone + Send + 'static,
+    C: Clone + Send + Sync + 'static,
+{
+    fn create<Target: Socketter>(&self, target: Target) -> T;
+}
+pub trait Socketter {
+    fn client_addr(&self) -> SocketAddr;
+}
+impl Socketter for AddrStream {
+    fn client_addr(&self) -> SocketAddr {
+        self.remote_addr()
+    }
+}
+
+impl<'a> Socketter for &'a AddrStream {
+    fn client_addr(&self) -> SocketAddr {
+        self.remote_addr()
+    }
+}
+
+pub struct MakeServiceFactory<F, C, T>
+where
+    F: ApiFactory<C, T>,
+    T: Api<C> + Clone + Send + 'static,
+    C: Has<XSpanIdString> + Has<Option<Authorization>> + Clone + Send + Sync + 'static,
+{
+    api_factory: F,
+    marker: PhantomData<(C, T)>,
+}
+
+impl<F, C, T> MakeServiceFactory<F, C, T>
+where
+    F: ApiFactory<C, T>,
+    T: Api<C> + Clone + Send + 'static,
+    C: Has<XSpanIdString> + Has<Option<Authorization>> + Clone + Send + Sync + 'static,
+{
+    pub fn new(api_factory: F) -> Self {
+        MakeServiceFactory {
+            api_factory,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<F, Target, C, T> hyper::service::Service<Target> for MakeServiceFactory<F, C, T>
+where
+    F: ApiFactory<C, T>,
+    T: Api<C> + Clone + Send + 'static,
+    Target: Socketter,
+    C: Has<XSpanIdString> + Has<Option<Authorization>> + Clone + Send + Sync + 'static,
+{
+    type Response = Service<T, C>;
+    type Error = crate::ServiceError;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, target: Target) -> Self::Future {
+        futures::future::ok(Service::new(self.api_factory.create(target)))
+    }
+}
+
 pub struct MakeService<T, C> where
     T: Api<C> + Clone + Send + 'static,
     C: Has<XSpanIdString> {{#hasAuthMethods}}+ Has<Option<Authorization>>{{/hasAuthMethods}} + Send + Sync + 'static
